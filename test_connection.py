@@ -1,18 +1,18 @@
 import psycopg2
 
-# Try different configurations
+#DATABASE CONFIGURATIONS
 configs = [
     {
         'dbname': 'health_facilities_db',
         'user': 'postgres',
-        'password': '12345678',  # ← CHANGE THIS!
+        'password': '12345678',
         'host': 'localhost',
         'port': 5432
     },
     {
-        'dbname': 'postgres',  # Try connecting to default database
+        'dbname': 'postgres', 
         'user': 'postgres',
-        'password': '12345678',  # ← CHANGE THIS!
+        'password': '12345678',
         'host': 'localhost',
         'port': 5432
     }
