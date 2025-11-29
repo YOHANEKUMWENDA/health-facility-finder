@@ -13,10 +13,12 @@ def create_app(config_class=Config):
     from app.routes.facilities import facilities_bp
     from app.routes.locations import locations_bp
     from app.routes.stats import stats_bp
+    from app.routes.routing import routing_bp
     
     app.register_blueprint(main_bp)
     app.register_blueprint(facilities_bp)
     app.register_blueprint(locations_bp)
     app.register_blueprint(stats_bp)
+    app.register_blueprint(routing_bp)
     
     return app
