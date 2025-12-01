@@ -20,7 +20,7 @@ def test_route_calculation():
         print("Server failed to start in time.")
         return
 
-    # Use a known location (Lilongwe) and a facility ID
+    # Use a known location 
     try:
         facilities_resp = requests.get(f"{BASE_URL}/facilities?limit=1")
         facilities_data = facilities_resp.json()
@@ -34,7 +34,7 @@ def test_route_calculation():
         facility_name = facility['name']
         print(f"Target facility: {facility_name} (ID: {facility_id})")
         
-        # Mock user location (somewhere in Lilongwe)
+        # Mock user location
         user_lat = -13.9626
         user_lng = 33.7741
         
