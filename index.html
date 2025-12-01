@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Malawi Health Facility Finder</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
     <style>
         * {
             margin: 0;
@@ -389,7 +388,6 @@
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
     <script>
         const API_BASE_URL = 'http://127.0.0.1:5000/api';
         
@@ -433,7 +431,7 @@
         let facilityMarkers = [];
         let userMarker = null;
         let userLocation = null;
-        let routingControl = null;
+        let currentRouteLayer = null;
         let currentResults = [];
 
         function showMessage(message, type = 'info') {
@@ -524,6 +522,12 @@
 
             map.setView([lat, lng], 12);
             document.getElementById('findBtn').disabled = false;
+            
+            // Clear previous route if any
+            if (currentRouteLayer) {
+                map.removeLayer(currentRouteLayer);
+                currentRouteLayer = null;
+            }
         }
 
         // Map click handler
@@ -639,9 +643,10 @@
                     <div class="distance">📏 ${facility.distance_km} km away</div>
                     ${servicesHtml}
                     ${hoursHtml}
-                    <button class="route-btn" onclick="showRoute(${facility.lat}, ${facility.lng}, '${facility.name}')">
+                    <button class="route-btn" onclick="showRoute(${facility.id}, '${facility.name.replace(/'/g, "\\'")}')"> 
                         🗺️ Show Route
                     </button>
+                    <div id="route-info-${facility.id}" class="route-info" style="display:none; margin-top: 10px; font-size: 0.9em; background: #f8f9fa; padding: 10px; border-radius: 5px;"></div>
                 `;
                 
                 card.addEventListener('click', (e) => {
@@ -675,35 +680,85 @@
         }
 
         // Show route to facility
-        window.showRoute = function(lat, lng, name) {
+        window.showRoute = async function(facilityId, name) {
             if (!userLocation) {
                 showMessage('Please set your location first', 'error');
                 return;
             }
 
-            // Remove existing route
-            if (routingControl) {
-                map.removeControl(routingControl);
+            // Reset UI
+            document.querySelectorAll('.route-info').forEach(el => el.style.display = 'none');
+            const infoDiv = document.getElementById(`route-info-${facilityId}`);
+            if (infoDiv) {
+                infoDiv.innerHTML = 'Calculating route...';
+                infoDiv.style.display = 'block';
             }
 
-            // Create new route
-            routingControl = L.Routing.control({
-                waypoints: [
-                    L.latLng(userLocation.lat, userLocation.lng),
-                    L.latLng(lat, lng)
-                ],
-                routeWhileDragging: false,
-                addWaypoints: false,
-                draggableWaypoints: false,
-                fitSelectedRoutes: true,
-                showAlternatives: false,
-                lineOptions: {
-                    styles: [{ color: '#667eea', weight: 5, opacity: 0.7 }]
-                },
-                createMarker: function() { return null; } // Don't create extra markers
-            }).addTo(map);
+            showMessage(`Calculating route to ${name}...`, 'info');
 
-            showMessage(`Route to ${name} displayed`, 'info');
+            try {
+                const response = await fetch(`${API_BASE_URL}/route`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        start_lat: userLocation.lat,
+                        start_lng: userLocation.lng,
+                        facility_id: facilityId,
+                        algorithm: 'dijkstra'
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    const routeData = result.data.route;
+                    
+                    // Remove existing route
+                    if (currentRouteLayer) {
+                        map.removeLayer(currentRouteLayer);
+                    }
+
+                    // Draw new route
+                    if (routeData.geometry) {
+                        currentRouteLayer = L.geoJSON(routeData.geometry, {
+                            style: {
+                                color: '#667eea',
+                                weight: 5,
+                                opacity: 0.8
+                            }
+                        }).addTo(map);
+                        
+                        map.fitBounds(currentRouteLayer.getBounds(), { padding: [50, 50] });
+                    }
+
+                    // Display route info
+                    if (infoDiv) {
+                        let directionsHtml = '<div style="max-height: 200px; overflow-y: auto; margin-top: 5px;">';
+                        routeData.directions.forEach(step => {
+                            directionsHtml += `<div style="padding: 3px 0; border-bottom: 1px solid #eee;">
+                                <strong>${step.step}.</strong> ${step.instruction} (${step.distance_km} km)
+                            </div>`;
+                        });
+                        directionsHtml += '</div>';
+
+                        infoDiv.innerHTML = `
+                            <div style="color: #2196f3; font-weight: bold; margin-bottom: 5px;">
+                                🚗 Distance: ${routeData.distance_km} km • ⏱️ Time: ${routeData.estimated_time_minutes} min
+                            </div>
+                            ${directionsHtml}
+                        `;
+                    }
+                    
+                    showMessage(`Route to ${name} displayed`, 'info');
+                } else {
+                    showMessage(result.error || 'Could not calculate route', 'error');
+                    if (infoDiv) infoDiv.innerHTML = `<span style="color: red;">Error: ${result.error}</span>`;
+                }
+            } catch (error) {
+                console.error('Route error:', error);
+                showMessage('Failed to calculate route', 'error');
+                if (infoDiv) infoDiv.innerHTML = '<span style="color: red;">Failed to connect to routing service</span>';
+            }
         };
 
         // Functional only toggle
