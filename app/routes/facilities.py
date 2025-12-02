@@ -33,7 +33,7 @@ def get_all_facilities():
                 district,
                 latitude as lat,
                 longitude as lng
-            FROM malawi_health_registry
+            FROM malawi_health_facilities
             WHERE latitude IS NOT NULL 
             AND longitude IS NOT NULL
             AND name IS NOT NULL
@@ -98,7 +98,7 @@ def get_facility_details(facility_id):
                 district,
                 latitude as lat,
                 longitude as lng
-            FROM malawi_health_registry
+            FROM malawi_health_facilities
             WHERE gid = %s;
         """, (facility_id,))
         
@@ -137,7 +137,7 @@ def get_facility_types():
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("""
             SELECT DISTINCT type as facility_type, COUNT(*) as count
-            FROM malawi_health_registry
+            FROM malawi_health_facilities
             WHERE type IS NOT NULL 
             AND latitude IS NOT NULL 
             AND longitude IS NOT NULL
@@ -170,7 +170,7 @@ def get_ownerships():
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("""
             SELECT DISTINCT ownership, COUNT(*) as count
-            FROM malawi_health_registry
+            FROM malawi_health_facilities
             WHERE ownership IS NOT NULL 
             AND latitude IS NOT NULL 
             AND longitude IS NOT NULL
@@ -238,7 +238,7 @@ def find_nearest_facilities():
                         ) / 1000 AS numeric
                     ), 2
                 ) as distance_km
-            FROM malawi_health_registry
+            FROM malawi_health_facilities
             WHERE latitude IS NOT NULL 
             AND longitude IS NOT NULL
             AND name IS NOT NULL

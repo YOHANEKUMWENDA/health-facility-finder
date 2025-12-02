@@ -47,9 +47,15 @@ def test_route_calculation():
         
         print("Requesting route...")
         route_resp = requests.post(f"{BASE_URL}/route", json=payload)
-        route_data = route_resp.json()
-        
-        if route_data['success']:
+        print('HTTP status:', route_resp.status_code)
+        try:
+            route_data = route_resp.json()
+        except Exception as e:
+            print('Invalid JSON response:', e)
+            print(route_resp.text)
+            return
+
+        if route_data.get('success'):
             print("✅ Route calculation successful!")
             route = route_data['data']['route']
             print(f"Distance: {route['distance_km']} km")
@@ -59,6 +65,9 @@ def test_route_calculation():
         else:
             print("❌ Route calculation failed.")
             print("Error:", route_data.get('error'))
+            # show extra details if provided
+            if 'details' in route_data:
+                print('Details:', route_data['details'])
             
     except Exception as e:
         print(f"❌ Exception during test: {e}")

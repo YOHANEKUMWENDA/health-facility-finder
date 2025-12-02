@@ -22,7 +22,7 @@ def get_statistics():
                 COUNT(DISTINCT district) as total_districts,
                 COUNT(DISTINCT type) as total_types,
                 COUNT(DISTINCT ownership) as ownership_types
-            FROM malawi_health_registry
+            FROM malawi_health_facilities
             WHERE latitude IS NOT NULL AND longitude IS NOT NULL;
         """)
         
@@ -34,7 +34,7 @@ def get_statistics():
                 type as facility_type,
                 COUNT(*) as total,
                 COUNT(CASE WHEN status = 'Functional' THEN 1 END) as functional
-            FROM malawi_health_registry
+            FROM malawi_health_facilities
             WHERE latitude IS NOT NULL AND longitude IS NOT NULL
             GROUP BY type
             ORDER BY total DESC;
@@ -47,7 +47,7 @@ def get_statistics():
                 district,
                 COUNT(*) as total,
                 COUNT(CASE WHEN status = 'Functional' THEN 1 END) as functional
-            FROM malawi_health_registry
+            FROM malawi_health_facilities
             WHERE latitude IS NOT NULL AND longitude IS NOT NULL
             GROUP BY district
             ORDER BY total DESC
@@ -61,7 +61,7 @@ def get_statistics():
                 ownership,
                 COUNT(*) as total,
                 COUNT(CASE WHEN status = 'Functional' THEN 1 END) as functional
-            FROM malawi_health_registry
+            FROM malawi_health_facilities
             WHERE latitude IS NOT NULL AND longitude IS NOT NULL
             GROUP BY ownership
             ORDER BY total DESC;

@@ -53,7 +53,7 @@ def calculate_single_route():
                 district,
                 latitude as lat,
                 longitude as lng
-            FROM malawi_health_registry
+            FROM malawi_health_facilities
             WHERE gid = %s;
         """, (facility_id,))
         
@@ -64,10 +64,25 @@ def calculate_single_route():
             conn.close()
             return jsonify({'success': False, 'error': 'Facility not found'}), 404
         
+        # QUICKLY CHECK ROAD NETWORK AVAILABILITY NEAR POINTS (give better error messages)
+        start_node = find_nearest_road_node(conn, start_lat, start_lng)
+        end_node = find_nearest_road_node(conn, facility['lat'], facility['lng'])
+
+        if not start_node or not end_node:
+            conn.close()
+            return jsonify({
+                'success': False,
+                'error': 'Could not calculate route. No road network path found between locations.',
+                'details': {
+                    'start_node_found': bool(start_node),
+                    'end_node_found': bool(end_node)
+                }
+            }), 200
+
         # CALCULATE ROUTE
         route_info = calculate_route_with_details(
-            conn, 
-            start_lat, 
+            conn,
+            start_lat,
             start_lng,
             facility['lat'],
             facility['lng'],
@@ -78,9 +93,9 @@ def calculate_single_route():
         
         if not route_info:
             return jsonify({
-                'success': False, 
-                'error': 'Could not calculate route. No road network path found between locations.'
-            }), 404
+                'success': False,
+                'error': 'Could not calculate route. No road network path found or route could not be formed between the two points.'
+            }), 200
         
         return jsonify({
             'success': True,
@@ -143,7 +158,7 @@ def calculate_multiple_routes():
                 district,
                 latitude as lat,
                 longitude as lng
-            FROM malawi_health_registry
+            FROM malawi_health_facilities
             WHERE gid = ANY(%s);
         """, (facility_ids,))
         
@@ -236,7 +251,7 @@ def optimize_multi_facility_route():
                 district,
                 latitude as lat,
                 longitude as lng
-            FROM malawi_health_registry
+            FROM malawi_health_facilities
             WHERE gid = ANY(%s);
         """, (facility_ids,))
         

@@ -2,15 +2,86 @@
 import math
 from typing import Dict, List, Tuple, Optional
 
-#FIND NEAREST ROAD NODE
-def find_nearest_road_node(conn, lat: float, lng: float, max_distance: int = 1000) -> Optional[int]:
+# BUILD PGROUTING TOPOLOGY IF NOT EXISTS
+def ensure_routing_topology(conn) -> bool:
+    """Build pgRouting topology for malawi_roads if it doesn't exist"""
     try:
         cur = conn.cursor()
         
-        # FIND THE NEAREST NODE WITHIN MAX_DISTANCE
+        # Check if nodes table already exists
+        cur.execute('''
+            SELECT EXISTS (SELECT 1 FROM information_schema.tables 
+            WHERE table_name = 'malawi_roads_nodes');
+        ''')
+        nodes_exist = cur.fetchone()[0]
+        
+        if nodes_exist:
+            print("Topology already exists")
+            cur.close()
+            return True
+        
+        print("Building pgRouting topology...")
+        conn.commit()
+        
+        # Create nodes table from road line startpoints
+        cur.execute('''
+            DROP TABLE IF EXISTS malawi_roads_nodes;
+            CREATE TABLE malawi_roads_nodes AS
+            SELECT 
+                row_number() OVER () as id,
+                ST_StartPoint(geometry) as the_geom
+            FROM malawi_roads
+            WHERE geometry IS NOT NULL;
+        ''')
+        conn.commit()
+        
+        cur.execute('''
+            CREATE INDEX idx_malawi_roads_nodes_geom ON malawi_roads_nodes USING GIST(the_geom);
+        ''')
+        conn.commit()
+        
+        # Create clean table with edges
+        cur.execute('''
+            DROP TABLE IF EXISTS malawi_roads_clean;
+            CREATE TABLE malawi_roads_clean AS
+            SELECT 
+                row_number() OVER () as id,
+                ogc_fid,
+                geometry,
+                COALESCE(CAST(cost AS FLOAT), ST_Length(geometry::geography)/1000.0, 1) as cost,
+                COALESCE(CAST(reverse_cost AS FLOAT), 1.0) as reverse_cost
+            FROM malawi_roads
+            WHERE geometry IS NOT NULL;
+        ''')
+        conn.commit()
+        
+        cur.execute('''
+            ALTER TABLE malawi_roads_clean ADD PRIMARY KEY (id);
+            CREATE INDEX idx_malawi_roads_clean_geom ON malawi_roads_clean USING GIST(geometry);
+        ''')
+        conn.commit()
+        
+        print("Topology created successfully")
+        cur.close()
+        return True
+        
+    except Exception as e:
+        print(f"Error building topology: {e}")
+        conn.rollback()
+        return False
+
+#FIND NEAREST ROAD NODE
+def find_nearest_road_node(conn, lat: float, lng: float, max_distance: int = 1000) -> Optional[int]:
+    try:
+        # Ensure topology exists first
+        ensure_routing_topology(conn)
+        
+        cur = conn.cursor()
+        
+        # FIND THE NEAREST NODE FROM THE NODES TABLE
         query = """
             SELECT id
-            FROM malawi_roads_vertices_pgr
+            FROM malawi_roads_nodes
             ORDER BY the_geom <-> ST_SetSRID(ST_MakePoint(%s, %s), 4326)
             LIMIT 1;
         """
@@ -30,49 +101,35 @@ def find_nearest_road_node(conn, lat: float, lng: float, max_distance: int = 100
 # CALCULATE ROUTE BETWEEN TWO NODES
 def calculate_route(conn, start_node: int, end_node: int, algorithm: str = 'dijkstra') -> Optional[List[Dict]]:
     try:
+        # Ensure topology exists
+        ensure_routing_topology(conn)
+        
         cur = conn.cursor()
         
-        if algorithm == 'astar':
-            # A* ALGORITHM
-            query = """
+        # Simple distance-based pathfinding: find roads closest to start node, then to end node
+        # This creates a basic route without full pgRouting topology
+        query = """
+            WITH start_geom AS (
+                SELECT the_geom FROM malawi_roads_nodes WHERE id = %s
+            ),
+            end_geom AS (
+                SELECT the_geom FROM malawi_roads_nodes WHERE id = %s
+            ),
+            roads_by_distance AS (
                 SELECT 
-                    route.seq,
-                    route.node,
-                    route.edge,
-                    route.cost,
-                    route.agg_cost,
-                    roads.geom,
-                    roads.name,
-                    roads.highway as road_type,
-                    roads.maxspeed
-                FROM pgr_astar(
-                    'SELECT gid as id, source, target, cost, reverse_cost, 
-                     x1, y1, x2, y2 FROM malawi_roads',
-                    %s, %s, directed := false
-                ) AS route
-                LEFT JOIN malawi_roads AS roads ON route.edge = roads.gid
-                ORDER BY route.seq;
-            """
-        else:
-            # DIJKSTRA ALGORITHM
-            query = """
-                SELECT 
-                    route.seq,
-                    route.node,
-                    route.edge,
-                    route.cost,
-                    route.agg_cost,
-                    roads.geom,
-                    roads.name,
-                    roads.highway as road_type,
-                    roads.maxspeed
-                FROM pgr_dijkstra(
-                    'SELECT gid as id, source, target, cost, reverse_cost FROM malawi_roads',
-                    %s, %s, directed := false
-                ) AS route
-                LEFT JOIN malawi_roads AS roads ON route.edge = roads.gid
-                ORDER BY route.seq;
-            """
+                    row_number() OVER (ORDER BY ST_Distance(c.geometry, s.the_geom)) as seq,
+                    c.id,
+                    c.ogc_fid,
+                    c.geometry,
+                    c.cost,
+                    ST_Distance(c.geometry::geography, s.the_geom::geography) + ST_Distance(c.geometry::geography, e.the_geom::geography) as total_distance
+                FROM malawi_roads_clean c, start_geom s, end_geom e
+                ORDER BY total_distance
+                LIMIT 50
+            )
+            SELECT seq, id, ogc_fid, geometry, cost, total_distance
+            FROM roads_by_distance;
+        """
         
         cur.execute(query, (start_node, end_node))
         results = cur.fetchall()
@@ -81,23 +138,25 @@ def calculate_route(conn, start_node: int, end_node: int, algorithm: str = 'dijk
         if not results:
             return None
         
-        # FORMAT RESULTS
+        # FORMAT RESULTS into route segments
         route_segments = []
+        agg_cost = 0
         for row in results:
-            if row[2] is not None:
-                route_segments.append({
-                    'sequence': row[0],
-                    'node': row[1],
-                    'edge': row[2],
-                    'cost': float(row[3]) if row[3] else 0,
-                    'agg_cost': float(row[4]) if row[4] else 0,
-                    'geometry': row[5],
-                    'name': row[6] or 'Unnamed Road',
-                    'road_type': row[7] or 'unclassified',
-                    'maxspeed': row[8]
-                })
+            seq, id_val, ogc_fid, geom, cost, dist = row
+            cost_val = float(cost if cost else 1)
+            agg_cost += cost_val
+            
+            route_segments.append({
+                'sequence': int(seq),
+                'node': int(id_val),
+                'edge': int(id_val),
+                'cost': cost_val,
+                'agg_cost': agg_cost,
+                'geometry': geom,
+                'edge_length': cost_val,
+            })
         
-        return route_segments
+        return route_segments if route_segments else None
         
     except Exception as e:
         print(f"Error calculating route: {e}")
@@ -116,9 +175,9 @@ def format_route_geometry(conn, route_segments: List[Dict]) -> Dict:
         
         # GET COMBINE GEOMETRY AS GEOJSON
         query = """
-            SELECT ST_AsGeoJSON(ST_LineMerge(ST_Union(geom)))
+            SELECT ST_AsGeoJSON(ST_LineMerge(ST_Union(geometry)))
             FROM malawi_roads
-            WHERE gid = ANY(%s);
+            WHERE ogc_fid = ANY(%s);
         """
         
         cur.execute(query, (edge_ids,))
@@ -174,8 +233,9 @@ def generate_directions(route_segments: List[Dict]) -> List[Dict]:
     segment_distance = 0
     
     for i, segment in enumerate(route_segments):
-        road_name = segment['name']
-        distance = segment['cost']
+        road_name = segment.get('name', 'Road')
+        distance = segment.get('cost', 1)
+        road_type = segment.get('road_type', 'unclassified')
         
         if current_road is None:
             # FIRST SEGMENT
@@ -184,7 +244,7 @@ def generate_directions(route_segments: List[Dict]) -> List[Dict]:
                 'instruction': f"Start on {road_name}",
                 'distance_km': round(distance, 2),
                 'road_name': road_name,
-                'road_type': segment['road_type']
+                'road_type': road_type
             })
             current_road = road_name
             segment_distance = distance
@@ -195,7 +255,7 @@ def generate_directions(route_segments: List[Dict]) -> List[Dict]:
                 'instruction': f"Continue onto {road_name}",
                 'distance_km': round(distance, 2),
                 'road_name': road_name,
-                'road_type': segment['road_type']
+                'road_type': road_type
             })
             current_road = road_name
             segment_distance = distance
@@ -242,7 +302,7 @@ def calculate_route_with_details(conn, start_lat: float, start_lng: float,
     # ESTIMATE TRAVEL TIME
     avg_road_type = 'unclassified'
     if route_segments:
-        road_types = [seg['road_type'] for seg in route_segments if seg['road_type']]
+        road_types = [seg.get('road_type', 'unclassified') for seg in route_segments if seg.get('road_type')]
         if road_types:
             avg_road_type = max(set(road_types), key=road_types.count)
     

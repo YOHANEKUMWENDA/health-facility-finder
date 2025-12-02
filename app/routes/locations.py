@@ -16,7 +16,7 @@ def get_districts():
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("""
             SELECT DISTINCT district, COUNT(*) as count
-            FROM malawi_health_registry
+            FROM malawi_health_facilities
             WHERE district IS NOT NULL 
             AND latitude IS NOT NULL 
             AND longitude IS NOT NULL
@@ -111,7 +111,7 @@ def geocode_location():
                         AVG(latitude) as lat,
                         AVG(longitude) as lng,
                         COUNT(*) as facility_count
-                    FROM malawi_health_registry
+                    FROM malawi_health_facilities
                     WHERE LOWER(district) = LOWER(%s)
                     AND latitude IS NOT NULL 
                     AND longitude IS NOT NULL
@@ -139,7 +139,7 @@ def geocode_location():
                         AVG(latitude) as lat,
                         AVG(longitude) as lng,
                         COUNT(*) as facility_count
-                    FROM malawi_health_registry
+                    FROM malawi_health_facilities
                     WHERE LOWER(district) LIKE LOWER(%s)
                     AND latitude IS NOT NULL 
                     AND longitude IS NOT NULL
