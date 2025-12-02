@@ -150,6 +150,7 @@ def calculate_route(conn, start_node: int, end_node: int, algorithm: str = 'dijk
                 'sequence': int(seq),
                 'node': int(id_val),
                 'edge': int(id_val),
+                'ogc_fid': int(ogc_fid),
                 'cost': cost_val,
                 'agg_cost': agg_cost,
                 'geometry': geom,
@@ -171,7 +172,7 @@ def format_route_geometry(conn, route_segments: List[Dict]) -> Dict:
         cur = conn.cursor()
         
         # COLLECT EDGE IDS
-        edge_ids = [seg['edge'] for seg in route_segments]
+        edge_ids = [seg['ogc_fid'] for seg in route_segments]
         
         # GET COMBINE GEOMETRY AS GEOJSON
         query = """

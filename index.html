@@ -787,3 +787,104 @@
     </script>
 </body>
 </html>
+            // Reset UI
+            document.querySelectorAll('.route-info').forEach(el => el.style.display = 'none');
+            const infoDiv = document.getElementById(`route-info-${facilityId}`);
+            if (infoDiv) {
+                infoDiv.innerHTML = 'Calculating route...';
+                infoDiv.style.display = 'block';
+            }
+
+            showMessage(`Calculating route to ${name}...`, 'info');
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/route`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        start_lat: userLocation.lat,
+                        start_lng: userLocation.lng,
+                        facility_id: facilityId,
+                        algorithm: 'dijkstra'
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    const routeData = result.data.route;
+                    
+                    // Remove existing route
+                    if (currentRouteLayer) {
+                        map.removeLayer(currentRouteLayer);
+                    }
+
+                    // Draw new route
+                    if (routeData.geometry) {
+                        currentRouteLayer = L.geoJSON(routeData.geometry, {
+                            style: {
+                                color: '#667eea',
+                                weight: 5,
+                                opacity: 0.8
+                            }
+                        }).addTo(map);
+                        
+                        map.fitBounds(currentRouteLayer.getBounds(), { padding: [50, 50] });
+                    }
+
+                    // Display route info
+                    if (infoDiv) {
+                        let directionsHtml = '<div style="max-height: 200px; overflow-y: auto; margin-top: 5px;">';
+                        routeData.directions.forEach(step => {
+                            directionsHtml += `<div style="padding: 3px 0; border-bottom: 1px solid #eee;">
+                                <strong>${step.step}.</strong> ${step.instruction} (${step.distance_km} km)
+                            </div>`;
+                        });
+                        directionsHtml += '</div>';
+
+                        infoDiv.innerHTML = `
+                            <div style="color: #2196f3; font-weight: bold; margin-bottom: 5px;">
+                                🚗 Distance: ${routeData.distance_km} km • ⏱️ Time: ${routeData.estimated_time_minutes} min
+                            </div>
+                            ${directionsHtml}
+                        `;
+                    }
+                    
+                    showMessage(`Route to ${name} displayed`, 'info');
+                } else {
+                    showMessage(result.error || 'Could not calculate route', 'error');
+                    if (infoDiv) infoDiv.innerHTML = `<span style="color: red;">Error: ${result.error}</span>`;
+                }
+            } catch (error) {
+                console.error('Route error:', error);
+                showMessage('Failed to calculate route', 'error');
+                if (infoDiv) infoDiv.innerHTML = '<span style="color: red;">Failed to connect to routing service</span>';
+            }
+        };
+
+        // Functional only toggle
+        document.getElementById('functionalOnly').addEventListener('change', function() {
+            loadFacilities();
+            document.getElementById('resultsContainer').style.display = 'none';
+        });
+
+        // Try to get user location on load
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    setUserLocation(lat, lng, 'Your Location');
+                    map.setView([lat, lng], 12);
+                },
+                (error) => {
+                    console.log('Initial geolocation failed, using default Malawi view');
+                }
+            );
+        }
+
+        // Load facilities on page load
+        loadFacilities();
+    </script>
+</body>
+</html>

@@ -1,76 +1,64 @@
-import requests
+import urllib.request
 import json
-import time
+import sys
 
-BASE_URL = 'http://127.0.0.1:5000/api'
+API_BASE_URL = 'http://127.0.0.1:5000/api'
 
-def test_route_calculation():
-    print("Testing /api/route endpoint...")
-    
-    # Wait for server to start
-    print("Waiting for server to be ready...")
-    for i in range(10):
-        try:
-            requests.get(f"{BASE_URL}/facilities?limit=1")
-            print("Server is ready!")
-            break
-        except requests.exceptions.ConnectionError:
-            time.sleep(1)
-    else:
-        print("Server failed to start in time.")
-        return
-
-    # Use a known location 
+def test_route():
+    # 1. Get a facility
+    print("Fetching facilities...")
     try:
-        facilities_resp = requests.get(f"{BASE_URL}/facilities?limit=1")
-        facilities_data = facilities_resp.json()
-        
-        if not facilities_data['success'] or not facilities_data['data']:
-            print("Failed to get facilities for testing.")
-            return
+        with urllib.request.urlopen(f"{API_BASE_URL}/facilities") as response:
+            data = json.loads(response.read().decode())
+            if not data['success'] or not data['data']:
+                print("Failed to fetch facilities")
+                return False
             
-        facility = facilities_data['data'][0]
-        facility_id = facility['id']
-        facility_name = facility['name']
-        print(f"Target facility: {facility_name} (ID: {facility_id})")
-        
-        # Mock user location
-        user_lat = -13.9626
-        user_lng = 33.7741
-        
-        payload = {
-            'start_lat': user_lat,
-            'start_lng': user_lng,
-            'facility_id': facility_id,
-            'algorithm': 'dijkstra'
-        }
-        
-        print("Requesting route...")
-        route_resp = requests.post(f"{BASE_URL}/route", json=payload)
-        print('HTTP status:', route_resp.status_code)
-        try:
-            route_data = route_resp.json()
-        except Exception as e:
-            print('Invalid JSON response:', e)
-            print(route_resp.text)
-            return
-
-        if route_data.get('success'):
-            print("✅ Route calculation successful!")
-            route = route_data['data']['route']
-            print(f"Distance: {route['distance_km']} km")
-            print(f"Time: {route['estimated_time_minutes']} min")
-            print(f"Segments: {len(route['directions'])}")
-            print("Geometry present:", 'geometry' in route)
-        else:
-            print("❌ Route calculation failed.")
-            print("Error:", route_data.get('error'))
-            # show extra details if provided
-            if 'details' in route_data:
-                print('Details:', route_data['details'])
+            facility = data['data'][0]
+            print(f"Target facility: {facility['name']} (ID: {facility['id']})")
             
+            # 2. Calculate route from a nearby point (offset slightly)
+            start_lat = float(facility['lat']) - 0.05
+            start_lng = float(facility['lng']) - 0.05
+            
+            payload = {
+                "start_lat": start_lat,
+                "start_lng": start_lng,
+                "facility_id": facility['id'],
+                "algorithm": "dijkstra"
+            }
+            
+            req = urllib.request.Request(
+                f"{API_BASE_URL}/route",
+                data=json.dumps(payload).encode(),
+                headers={'Content-Type': 'application/json'},
+                method='POST'
+            )
+            
+            print("Calculating route...")
+            with urllib.request.urlopen(req) as route_response:
+                route_data = json.loads(route_response.read().decode())
+                
+                if route_data['success']:
+                    geometry = route_data['data']['route']['geometry']
+                    if geometry and geometry['type'] == 'Feature':
+                        print("SUCCESS: Route geometry returned!")
+                        print(f"Distance: {route_data['data']['route']['distance_km']} km")
+                        return True
+                    else:
+                        print("FAILURE: Route geometry missing or invalid")
+                        print(json.dumps(route_data, indent=2))
+                        return False
+                else:
+                    print(f"FAILURE: API returned error: {route_data.get('error')}")
+                    return False
+                    
     except Exception as e:
-        print(f"❌ Exception during test: {e}")
+        print(f"Error: {e}")
+        return False
 
 if __name__ == "__main__":
-    test_route_calculation()
+    if test_route():
+        sys.exit(0)
+    else:
+        sys.exit(1)
