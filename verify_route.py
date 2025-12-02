@@ -5,7 +5,6 @@ import sys
 API_BASE_URL = 'http://127.0.0.1:5000/api'
 
 def test_route():
-    # 1. Get a facility
     print("Fetching facilities...")
     try:
         with urllib.request.urlopen(f"{API_BASE_URL}/facilities") as response:
@@ -17,7 +16,6 @@ def test_route():
             facility = data['data'][0]
             print(f"Target facility: {facility['name']} (ID: {facility['id']})")
             
-            # 2. Calculate route from a nearby point (offset slightly)
             start_lat = float(facility['lat']) - 0.05
             start_lng = float(facility['lng']) - 0.05
             

@@ -101,13 +101,10 @@ def find_nearest_road_node(conn, lat: float, lng: float, max_distance: int = 100
 # CALCULATE ROUTE BETWEEN TWO NODES
 def calculate_route(conn, start_node: int, end_node: int, algorithm: str = 'dijkstra') -> Optional[List[Dict]]:
     try:
-        # Ensure topology exists
         ensure_routing_topology(conn)
         
         cur = conn.cursor()
         
-        # Simple distance-based pathfinding: find roads closest to start node, then to end node
-        # This creates a basic route without full pgRouting topology
         query = """
             WITH start_geom AS (
                 SELECT the_geom FROM malawi_roads_nodes WHERE id = %s

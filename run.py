@@ -7,7 +7,7 @@ if __name__ == '__main__':
     print("Malawi Health Facility Finder API")
     print("Data Source: Ministry of Health Registry 2023")
     print("=" * 70)
-    print("✨ NEW FEATURES:")
+    print("NEW FEATURES:")
     print("  - Location search with geocoding")
     print("  - Service information by facility type")
     print("  - Working hours display")
